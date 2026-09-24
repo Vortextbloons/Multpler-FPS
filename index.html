@@ -45,7 +45,7 @@
     <div id="topbar">
       <div id="room-label">NF / 02 <span>PUBLIC ARENA 01</span></div>
       <div id="session-clock">00:00</div>
-      <div id="net-status"><span id="net-dot"></span><span id="net-text">OFFLINE</span><span id="fps-text"></span></div>
+      <div id="net-status"><span id="net-dot"></span><span id="net-text">OFFLINE</span><button id="quality-btn" type="button" title="Cycle graphics quality">HIGH</button><span id="fps-text"></span></div>
     </div>
     <div id="killfeed"></div>
     <div id="bottom-left">
@@ -83,7 +83,7 @@
     <div id="enemy-health-bars" aria-hidden="true"></div>
     <div id="center-toast"></div>
     <div id="pickup-toast"></div>
-    <div id="controls-hint">WASD MOVE <i>/</i> SHIFT SPRINT <i>/</i> SPACE JUMP + JET <i>/</i> C SLIDE <i>/</i> RMB AIM <i>/</i> LMB FIRE <i>/</i> R RELOAD <i>/</i> 1–7 SWAP <i>/</i> TAB SCORES</div>
+    <div id="controls-hint">WASD MOVE <i>/</i> SHIFT SPRINT <i>/</i> SPACE JUMP + JET <i>/</i> C SLIDE <i>/</i> RMB AIM <i>/</i> LMB FIRE <i>/</i> R RELOAD <i>/</i> 1–7 SWAP <i>/</i> TAB SCORES <i>/</i> G GRAPHICS</div>
     <div id="touch-controls" aria-label="Touch game controls">
       <div id="move-stick" aria-label="Move"><div id="move-knob"></div></div>
       <button id="touch-scores" class="touch-utility" aria-label="Show standings">SCORES</button>
@@ -113,6 +113,14 @@
           <div class="name-input-wrap">
             <input id="player-name" maxlength="14" placeholder="NOVA-7" autocomplete="off">
             <button id="reroll-name" aria-label="Randomize callsign" title="Randomize callsign">↻</button>
+          </div>
+        </div>
+        <div class="quality-row">
+          <label id="quality-label">GRAPHICS</label>
+          <div class="quality-picks" role="group" aria-labelledby="quality-label">
+            <button type="button" class="qpick" data-quality="high" aria-pressed="true">HIGH</button>
+            <button type="button" class="qpick" data-quality="auto">AUTO</button>
+            <button type="button" class="qpick" data-quality="low">LOW</button>
           </div>
         </div>
         <div class="menu-buttons">

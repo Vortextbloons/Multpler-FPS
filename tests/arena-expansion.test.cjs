@@ -38,7 +38,7 @@ class Light {
 const THREE={
   Vector3, Mesh, InstancedMesh,
   BoxGeometry, CylinderGeometry:Geometry, TorusGeometry:Geometry, PlaneGeometry:Geometry,
-  MeshStandardMaterial:Material, MeshBasicMaterial:Material, CanvasTexture:Material,
+  MeshStandardMaterial:Material, MeshLambertMaterial:Material, MeshBasicMaterial:Material, CanvasTexture:Material,
   HemisphereLight:Light, DirectionalLight:Light, PointLight:Light,
   FogExp2:Material, Color:Material, GridHelper:Mesh,
   DoubleSide:2, SRGBColorSpace:'srgb',
@@ -63,7 +63,7 @@ const instanceTransforms=batches.flatMap(batch=>batch.matrices.map(matrix=>trans
 assert.deepEqual(instanceTransforms,originalTransforms,'batching preserves all decorative transforms');
 for(const batch of batches){
   assert.equal(batch.matrices.length,batch.count,'each instance retains a transform');
-  assert.equal(batch.receiveShadow,true,'decorative geometry still receives shadows');
+  if(!batch.userData.allowUnshadowed) assert.equal(batch.receiveShadow,true,'decorative geometry still receives shadows');
   assert.deepEqual(batch.geometry.size,[1,1,1],'instances use a shared unit box');
 }
 for(const mesh of scene.removed){

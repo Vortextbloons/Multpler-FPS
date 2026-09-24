@@ -1,12 +1,13 @@
 import * as THREE from 'three';
 import { SUPABASE_URL, SUPABASE_ANON, ROOM_ID, WEAPONS, WEAPON_ORDER, MOVE, randomName, randomColor, guestId } from './config.js';
-import { buildArena, ARENA, tickArena, pickSpawn } from './arena.js';
+import { buildArena, ARENA, tickArena, pickSpawn, getArenaSun, applyArenaQuality } from './arena.js';
 import { makeWeaponView, makeWeaponWorld, makePlayerMesh, setPlayerName, setPlayerWeapon, posePlayer, animateWeaponReload, FX } from './visuals.js';
 import { LocalPlayer } from './player.js';
 import { makeBots } from './bots.js';
 import { SFX, initAudio, resumeAudio, toggleMute } from './audio.js';
 import { Net } from './net.js';
 import { createClient } from '@supabase/supabase-js';
+import { loadQuality, setQualityMode, getQualityMode, getQualityLevel, gfx, onQualityChange, noteFps } from './quality.js';
 
 // ---------- DOM ----------
 const $ = id => document.getElementById(id);
@@ -29,8 +30,74 @@ let lastTime=0, sessionT=0, soloEnd=20, soloTimeLeft=600, matchOver=false;
 let killfeedEl=$('killfeed');
 let sbTimer=0, hbTimer=0;
 let muted=false;
-let clockFps=0, clockFrames=0, clockT=0;
+let clockFrames=0, clockWall=0;
 let loopStarted=false;
+const hudCache={health:'',low:false,fuel:'',ammo:'',hint:'',bloom:'',ads:'',rail:false,adsClass:false,aimed:false};
+
+loadQuality();
+function describeQuality(){
+  const selected=getQualityMode();
+  const level=getQualityLevel();
+  if(selected==='auto') return level==='low'?'AUTO·LOW':'AUTO';
+  return selected.toUpperCase();
+}
+function syncQualityUi(){
+  const selected=getQualityMode();
+  for(const btn of document.querySelectorAll('.qpick')){
+    btn.setAttribute('aria-pressed', btn.dataset.quality===selected ? 'true' : 'false');
+  }
+  const hudBtn=$('quality-btn');
+  if(!hudBtn) return;
+  const label=describeQuality();
+  hudBtn.textContent=label;
+  hudBtn.title=`Graphics ${label}. Click or press G to cycle.`;
+}
+function cycleQuality(){
+  const order=['high','low','auto'];
+  const i=Math.max(0, order.indexOf(getQualityMode()));
+  setQualityMode(order[(i+1)%order.length]);
+}
+function applyRendererQuality(){
+  if(!renderer) return;
+  const q=gfx();
+  const cap=touchMode ? Math.min(1, q.maxPixelRatio) : q.maxPixelRatio;
+  const ratio=Math.max(0.5, Math.min(devicePixelRatio||1, cap) * q.renderScale);
+  renderer.setPixelRatio(ratio);
+  renderer.setSize(innerWidth, innerHeight);
+  const shadows=!!q.shadows && !touchMode;
+  renderer.shadowMap.enabled=shadows;
+  renderer.shadowMap.type=q.shadowType==='basic' ? THREE.BasicShadowMap : THREE.PCFSoftShadowMap;
+  const sun=getArenaSun();
+  if(sun){
+    sun.castShadow=shadows;
+    const size=q.shadowMapSize;
+    if(sun.shadow.mapSize.x!==size || sun.shadow.mapSize.y!==size){
+      sun.shadow.mapSize.set(size, size);
+      if(sun.shadow.map){ sun.shadow.map.dispose(); sun.shadow.map=null; }
+    }
+  }
+  renderer.shadowMap.needsUpdate=true;
+}
+function applyLiveQuality(){
+  applyRendererQuality();
+  applyArenaQuality(gfx().cheapTrim);
+  const lightsOn=gfx().pickupLights;
+  for(const p of pickups){
+    if(!p.light) continue;
+    p.light.visible=lightsOn;
+    p.light.intensity=lightsOn ? 6 : 0;
+  }
+}
+onQualityChange(()=>{
+  syncQualityUi();
+  applyLiveQuality();
+  if(!hud.classList.contains('hidden')) toast(`GRAPHICS ${describeQuality()}`);
+});
+syncQualityUi();
+for(const btn of document.querySelectorAll('.qpick')){
+  btn.addEventListener('click', ()=> setQualityMode(btn.dataset.quality));
+}
+$('quality-btn')?.addEventListener('click', cycleQuality);
 
 function requestGameLock(){
   if(touchMode) return;
@@ -88,15 +155,18 @@ async function startGame(m){
 
   // renderer/scene
   if(!renderer){
-    renderer = new THREE.WebGLRenderer({canvas, antialias:!touchMode, powerPreference:touchMode?'default':'high-performance'});
-    renderer.setPixelRatio(Math.min(devicePixelRatio,touchMode?1:1.5));
-    renderer.setSize(innerWidth,innerHeight);
-    renderer.shadowMap.enabled = !touchMode;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    const q=gfx();
+    renderer = new THREE.WebGLRenderer({canvas, antialias:!touchMode && q.antialias, powerPreference:(touchMode || q.id==='low')?'default':'high-performance'});
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.42;
-    addEventListener('resize', ()=>{ renderer.setSize(innerWidth,innerHeight); camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); });
-  }
+    applyRendererQuality();
+    addEventListener('resize', ()=>{
+      if(!renderer || !camera) return;
+      renderer.setSize(innerWidth,innerHeight);
+      camera.aspect=innerWidth/innerHeight;
+      camera.updateProjectionMatrix();
+    });
+  } else applyRendererQuality();
   scene = new THREE.Scene();
   camera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.08, 220);
   scene.add(camera);
@@ -104,6 +174,7 @@ async function startGame(m){
   viewFill.position.set(-1,1,1); camera.add(viewFill);
   fx = new FX(scene);
   buildArena(scene);
+  applyArenaQuality(gfx().cheapTrim);
 
   player = new LocalPlayer();
   {
@@ -120,9 +191,10 @@ async function startGame(m){
   viewMuzzleFlash = new THREE.Mesh(new THREE.PlaneGeometry(0.18,0.18),
     new THREE.MeshBasicMaterial({color:0xffffff, transparent:true, opacity:0, blending:THREE.AdditiveBlending, depthWrite:false}));
   viewMuzzleFlash.position.set(0.28,-0.18,-1.1); camera.add(viewMuzzleFlash);
-  viewLight = new THREE.PointLight(0x22d3ee, 0, 6); viewLight.position.set(0.3,-0.1,-1); camera.add(viewLight);
+  viewLight = new THREE.PointLight(0x22d3ee, 0, 6); viewLight.position.set(0.3,-0.1,-1); viewLight.visible=false; camera.add(viewLight);
 
   buildPickups();
+  applyLiveQuality();
 
   bots=[]; remotes.clear(); enemyHealthBars.replaceChildren();
   if(window._netTimer){ clearInterval(window._netTimer); window._netTimer=null; }
@@ -186,6 +258,7 @@ async function startGame(m){
   buildWeaponSlots();
   refreshScoreboard();
   lastTime = performance.now();
+  clockWall=0; clockFrames=0;
   if(!loopStarted){ loopStarted=true; requestAnimationFrame(loop); }
   SFX.spawn();
 }
@@ -206,10 +279,11 @@ function buildPickups(){
     const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.5,0.5,2.4,12,1,true),
       new THREE.MeshBasicMaterial({color: WEAPONS[s.weapon].color, transparent:true, opacity:0.1, side:THREE.DoubleSide, depthWrite:false}));
     group.add(beam);
-    const light = new THREE.PointLight(WEAPONS[s.weapon].color, 6, 7);
+    const light = new THREE.PointLight(WEAPONS[s.weapon].color, gfx().pickupLights?6:0, 7);
+    light.visible=gfx().pickupLights;
     group.add(light);
     scene.add(group);
-    pickups.push({ id:s.id, weapon:s.weapon, pos:s.pos.clone(), group, gun, ring, available:true, timer:0 });
+    pickups.push({ id:s.id, weapon:s.weapon, pos:s.pos.clone(), group, gun, ring, light, available:true, timer:0 });
   }
 }
 
@@ -225,6 +299,7 @@ function bindInputOnce(){
     if(e.code==='Space') { input.jumpHeld=true; if(fresh) input.jumpPressed=true; e.preventDefault(); }
     if(e.code==='KeyR') tryReload();
     if(e.code==='KeyM'){ muted=toggleMute(); toast(`${muted?'MUTED':'SOUND ON'}`); }
+    if(e.code==='KeyG' && !e.repeat && !hud.classList.contains('hidden') && e.target?.tagName!=='INPUT' && e.target?.tagName!=='TEXTAREA') cycleQuality();
     for(let i=0;i<WEAPON_ORDER.length;i++) if(e.code==='Digit'+(i+1)) switchWeapon(WEAPON_ORDER[i]);
     if(e.code==='KeyC'||e.code==='ControlLeft') { if(fresh) input.slidePressed=true; input.crouch=true; }
   });
@@ -486,8 +561,9 @@ function localFire(){
   camShake = Math.min(1, camShake + w.kick*8);
   crosshairBloom=Math.min(13,crosshairBloom+(player.current==='scatter'?9:player.current==='rail'?7:3.5));
   viewMuzzleFlash.material.opacity=1;
+  viewMuzzleFlash.rotation.z=Math.random()*Math.PI;
   viewMuzzleFlash.material.color.setHex(w.color);
-  viewLight.color.setHex(w.color); viewLight.intensity=14;
+  viewLight.color.setHex(w.color); viewLight.intensity=14; viewLight.visible=true;
   viewHolder.position.z = 0.09; // kickback, recovered in loop
 
   const pellets = w.pellets||1;
@@ -904,12 +980,16 @@ function detonatePlasma(pr, directId){
   if(dealt) showImpactFeedback(dealt,false,killed,true);
   fx.explosion(pp.clone(),w.color); SFX.explosion();
   scene.remove(pr.mesh);
-  pr.mesh.geometry.dispose(); pr.mesh.material.dispose();
+  if(fx.releaseProjectile) fx.releaseProjectile(pr.mesh);
+  else { pr.mesh.geometry.dispose(); pr.mesh.material.dispose(); }
 }
 
 function loop(now){
   requestAnimationFrame(loop);
+  // Hidden tabs already throttle rAF. Skip the sim and the draw, and don't bank a huge dt.
+  if(document.hidden){ lastTime=now; return; }
   let dt=Math.min(0.05,(now-lastTime)/1000); lastTime=now;
+  if(!player || !scene || !renderer) return;
   if(mode==='solo' && !touchMode && document.pointerLockElement!==canvas && !matchOver){
     hideEnemyHealthBars();
     renderer.render(scene,camera);
@@ -944,7 +1024,8 @@ function loop(now){
     if(player.jetting) SFX.jet();
     if(input.firing && (touchMode || document.pointerLockElement===canvas)) localFire();
     // auto reload prompt
-    $('reload-hint').textContent = player.reloading? 'RELOADING…' : player.mag[player.current]<=Math.ceil(w.mag*0.25)? (touchMode?'tap R to reload':'press R to reload') : '';
+    const hint = player.reloading? 'RELOADING…' : player.mag[player.current]<=Math.ceil(w.mag*0.25)? (touchMode?'tap R to reload':'press R to reload') : '';
+    if(hint!==hudCache.hint){ hudCache.hint=hint; $('reload-hint').textContent=hint; }
     // death by falling? no fall damage by design (arena friendly)
     if(!player.alive){ /* handled */ }
     if(player.respawnT!==undefined && !player.alive){
@@ -997,18 +1078,23 @@ function loop(now){
   vw.visible = player.current!=='rail' || visualAds<0.88;
   viewHolder.position.z = THREE.MathUtils.lerp(viewHolder.position.z, 0, dt*10);
   viewHolder.position.y = THREE.MathUtils.lerp(viewHolder.position.y, 0, Math.min(1,dt*12));
-  $('crosshair').classList.toggle('ads', visualAds>0.5);
-  $('crosshair').classList.toggle('aimed', visualAds>0.82);
+  const adsClass=visualAds>0.5, aimed=visualAds>0.82;
+  if(adsClass!==hudCache.adsClass){ hudCache.adsClass=adsClass; $('crosshair').classList.toggle('ads', adsClass); }
+  if(aimed!==hudCache.aimed){ hudCache.aimed=aimed; $('crosshair').classList.toggle('aimed', aimed); }
   crosshairBloom=Math.max(0,crosshairBloom-dt*25);
   const movementBloom=Math.min(6,player.speed2d*0.48)+(player.onGround?0:3);
-  $('crosshair').style.setProperty('--bloom',`${((movementBloom+crosshairBloom)*(1-visualAds*0.75)).toFixed(1)}px`);
+  const bloom=`${((movementBloom+crosshairBloom)*(1-visualAds*0.75)).toFixed(1)}px`;
+  if(bloom!==hudCache.bloom){ hudCache.bloom=bloom; $('crosshair').style.setProperty('--bloom', bloom); }
   const adsOverlay=$('ads-overlay');
-  adsOverlay.classList.toggle('rail',player.current==='rail');
-  adsOverlay.style.opacity=player.current==='rail'?
-    THREE.MathUtils.clamp((visualAds-0.36)/0.64,0,1):visualAds*0.36;
+  const railAds=player.current==='rail';
+  if(railAds!==hudCache.rail){ hudCache.rail=railAds; adsOverlay.classList.toggle('rail', railAds); }
+  const adsOpacity=String(player.current==='rail'?
+    THREE.MathUtils.clamp((visualAds-0.36)/0.64,0,1):visualAds*0.36);
+  if(adsOpacity!==hudCache.ads){ hudCache.ads=adsOpacity; adsOverlay.style.opacity=adsOpacity; }
   viewMuzzleFlash.material.opacity=Math.max(0,viewMuzzleFlash.material.opacity-dt*10);
-  viewMuzzleFlash.rotation.z=Math.random()*Math.PI;
+  if(viewMuzzleFlash.material.opacity>0.02) viewMuzzleFlash.rotation.z=Math.random()*Math.PI;
   viewLight.intensity=Math.max(0,viewLight.intensity-dt*120);
+  viewLight.visible=viewLight.intensity>0.05;
   viewMuzzleFlash.visible = player.ads<0.5;
 
   // bots
@@ -1205,17 +1291,28 @@ function loop(now){
     }
   }
 
-  // HUD
-  $('health-num').textContent=Math.ceil(player.health);
-  $('health-num').classList.toggle('low', player.health<35);
-  $('health-bar').style.width=player.health+'%';
-  $('fuel-bar').style.width=(player.fuel/MOVE.fuelMax*100)+'%';
-  const w2=WEAPONS[player.current];
-  $('ammo-mag').textContent=player.reloading?'--':player.mag[player.current];
-  $('ammo-res').textContent='∞';
-  // fps + net debug (multi): tx/rx proves broadcast path, vis = remotes with pos
-  clockFrames++; clockT+=dt;
-  if(clockT>0.5){
+  // HUD — write DOM only when the shown value changes
+  const healthText=String(Math.ceil(player.health));
+  const healthLow=player.health<35;
+  if(healthText!==hudCache.health || healthLow!==hudCache.low){
+    hudCache.health=healthText;
+    hudCache.low=healthLow;
+    $('health-num').textContent=healthText;
+    $('health-num').classList.toggle('low', healthLow);
+    $('health-bar').style.width=player.health+'%';
+  }
+  const fuelText=(player.fuel/MOVE.fuelMax*100).toFixed(0);
+  if(fuelText!==hudCache.fuel){ hudCache.fuel=fuelText; $('fuel-bar').style.width=fuelText+'%'; }
+  const ammoText=player.reloading?'--':String(player.mag[player.current]);
+  if(ammoText!==hudCache.ammo){ hudCache.ammo=ammoText; $('ammo-mag').textContent=ammoText; $('ammo-res').textContent='∞'; }
+  // fps + net debug (multi): tx/rx proves broadcast path, vis = remotes with pos.
+  // Wall-clock frames, not the capped sim step, so a 15fps machine is not reported as 20.
+  clockFrames++;
+  if(!clockWall) clockWall=now;
+  if(now-clockWall>500){
+    const windowSec=Math.max(0.001,(now-clockWall)/1000);
+    const fps=clockFrames/windowSec;
+    noteFps(fps, windowSec);
     let extra='';
     if(mode==='multi' && net){
       const vis=[...net.remotes.values()].filter(r=>r.pos).length;
@@ -1224,7 +1321,7 @@ function loop(now){
       // first contact toast
       if(net.rxCount>0 && !window._contactToast){ window._contactToast=true; toast('CONTACT — enemy position linked'); }
     }
-    $('fps-text').textContent=`· ${Math.round(clockFrames/clockT)}fps${extra}`; clockFrames=0; clockT=0;
+    $('fps-text').textContent=`· ${Math.round(fps)}fps · ${describeQuality()}${extra}`; clockFrames=0; clockWall=now;
   }
   sbTimer+=dt; if(sbTimer>2){ sbTimer=0; if(!$('scoreboard').classList.contains('hidden')) refreshScoreboard(); }
 
