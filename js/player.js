@@ -53,8 +53,9 @@ export class LocalPlayer {
   }
   startReload(){
     const w = WEAPONS[this.current];
-    if(this.reloading || this.mag[this.current]>=w.mag) return false;
+    if(!this.alive || this.reloading || this.mag[this.current]>=w.mag) return false;
     this.reloading=true; this.reloadT=w.reload;
+    this.adsTarget=0;
     return true;
   }
   eyePos(){

@@ -31,8 +31,9 @@ const context={
   bots:[{id:'near',alive:true,pos:new Vector3(4,0,0)},{id:'far',alive:true,pos:new Vector3(8,0,0)}],
   player:{alive:true,pos:new Vector3(20,0,0)},
   SFX:{explosion(){}}, fx:{explosion(){}}, scene:{remove(){}},
+  showImpactFeedback(){},
 };
-vm.runInNewContext(`${extract('moveRocket')}\n${extract('rocketContact')}\n${extract('detonatePlasma')}`,context);
+vm.runInNewContext(`${extract('moveRocket')}\n${extract('rocketContact')}\n${extract('splashDamage')}\n${extract('detonatePlasma')}`,context);
 
 const shot={weapon:'rocket',owner:'me',vel:new Vector3(48,0,0),mesh:{position:new Vector3(0,1.6,0),geometry:{dispose(){}},material:{dispose(){}}}};
 assert.equal(context.moveRocket(shot,0.1),true,'rocket explodes on first wall hit');
@@ -43,5 +44,5 @@ assert.equal(context.rocketContact(shot,new Vector3(4,0,0)),null,'rocket cannot 
 const hits=[];
 context.damageBot=(bot,dmg,_,weapon)=>hits.push([bot.id,dmg,weapon]);
 context.detonatePlasma(shot,null);
-assert.deepEqual(hits,[['near',62,'rocket']],'rocket blast applies its own splash radius and damage');
+assert.deepEqual(hits,[['near',55,'rocket']],'rocket blast falls off with distance and stops at its radius');
 console.log('rocket wall collision, swept hits, and splash damage pass');

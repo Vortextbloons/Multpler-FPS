@@ -39,6 +39,10 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--amber);outline-
 @keyframes low{50%{opacity:.55}}
 #health-bar-bg,#fuel-bar-bg{width:100%;overflow:hidden;background:#0c252d;border:1px solid rgba(157,207,201,.24)}
 #health-bar-bg{height:9px}#health-bar{height:100%;width:100%;background:linear-gradient(90deg,#3f9d9c,var(--teal));transition:width .13s}
+#enemy-health-bars{position:absolute;inset:0;overflow:hidden;pointer-events:none}
+.enemy-health{position:absolute;width:90px;height:13px;padding:2px;border:1px solid rgba(214,244,234,.9);background:rgba(8,28,36,.92);box-shadow:0 2px 9px rgba(0,0,0,.7);transform:translate(-50%,-100%)}
+.enemy-health-fill{height:100%;width:100%;background:var(--teal);box-shadow:0 0 7px rgba(101,216,206,.7)}
+.enemy-health.low .enemy-health-fill{background:var(--danger);box-shadow:0 0 7px rgba(255,112,111,.7)}
 #fuel-bar-bg{height:7px;margin-top:7px;position:relative}#fuel-bar{height:100%;width:100%;background:linear-gradient(90deg,#a5d7ac,var(--amber))}#fuel-bar-bg span{display:none}
 #weapon-slots{display:flex;gap:5px;margin-top:14px}
 .wslot{height:35px;min-width:0;flex:1;display:flex;align-items:center;justify-content:space-around;padding:0;background:#102a33;border:1px solid var(--line);font-family:'IBM Plex Mono',monospace;font-size:15px;color:#69848a;appearance:none}
@@ -63,18 +67,26 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--amber);outline-
 .scope-center{position:absolute;left:50%;top:50%;width:6px;height:6px;transform:translate(-50%,-50%);border:1px solid var(--amber);border-radius:50%;background:rgba(245,180,110,.25);box-shadow:0 0 7px var(--amber)}
 .scope-label,.scope-mark{position:absolute;font:500 8px 'IBM Plex Mono',monospace;letter-spacing:.12em;color:rgba(198,238,227,.7)}
 .scope-label{left:50%;bottom:13%;transform:translateX(-50%);white-space:nowrap;padding:3px 5px;background:rgba(5,22,27,.74);color:#d8f4eb}.scope-mark{top:52%}.scope-mark-left{left:18%}.scope-mark-right{right:17%}
-#crosshair{position:absolute;left:50%;top:50%;width:0;height:0;filter:drop-shadow(0 0 3px #0c2730)}
+#crosshair{position:absolute;left:50%;top:50%;width:0;height:0;--bloom:0px;filter:drop-shadow(0 0 3px #0c2730)}
 .ch-dot{position:absolute;left:-2px;top:-2px;width:4px;height:4px;border-radius:50%;background:#fff}
-.ch-t,.ch-b,.ch-l,.ch-r{position:absolute;background:#eafbf5;transition:transform .12s}
-.ch-t,.ch-b{width:2px;height:8px;left:-1px}.ch-t{top:-17px}.ch-b{top:9px}
-.ch-l,.ch-r{height:2px;width:8px;top:-1px}.ch-l{left:-17px}.ch-r{left:9px}
+.ch-t,.ch-b,.ch-l,.ch-r{position:absolute;background:#eafbf5;transition:transform .12s,top .08s,left .08s}
+.ch-t,.ch-b{width:2px;height:8px;left:-1px}.ch-t{top:calc(-17px - var(--bloom))}.ch-b{top:calc(9px + var(--bloom))}
+.ch-l,.ch-r{height:2px;width:8px;top:-1px}.ch-l{left:calc(-17px - var(--bloom))}.ch-r{left:calc(9px + var(--bloom))}
 #crosshair.ads .ch-t{transform:translateY(6px)}#crosshair.ads .ch-b{transform:translateY(-6px)}#crosshair.ads .ch-l{transform:translateX(6px)}#crosshair.ads .ch-r{transform:translateX(-6px)}
 #crosshair.aimed .ch-dot,#crosshair.aimed .ch-t,#crosshair.aimed .ch-b,#crosshair.aimed .ch-l,#crosshair.aimed .ch-r{opacity:0}
 #hitmarker{position:absolute;left:-12px;top:-12px;width:24px;height:24px;opacity:0}
 #hitmarker:before,#hitmarker:after{content:'';position:absolute;top:0;left:11px;width:2px;height:24px;background:#fff;box-shadow:0 0 7px var(--teal)}
 #hitmarker:before{transform:rotate(45deg)}#hitmarker:after{transform:rotate(-45deg)}
 #hitmarker.show{animation:hit .25s ease-out}#hitmarker.kill:before,#hitmarker.kill:after{background:var(--danger)}
+#hitmarker.head:before,#hitmarker.head:after{background:var(--amber);box-shadow:0 0 9px var(--amber)}
 @keyframes hit{0%{opacity:1;transform:scale(1.4)}100%{opacity:0;transform:scale(.9)}}
+#damage-numbers{position:absolute;inset:0;overflow:hidden;pointer-events:none}
+.damage-number{position:absolute;left:50%;top:50%;font:800 23px 'Barlow Condensed',sans-serif;letter-spacing:.02em;color:#e8fff8;text-shadow:0 2px 2px #082027,0 0 12px rgba(101,216,206,.8);white-space:nowrap;animation:damage-float .65s ease-out forwards}
+.damage-number.head{color:var(--amber);text-shadow:0 2px 2px #082027,0 0 14px rgba(240,171,102,.9)}
+.damage-number.splash{font-size:18px;color:#ccefe8}
+@keyframes damage-float{0%{opacity:0;transform:translate(-50%,0) scale(.7)}12%{opacity:1;transform:translate(-50%,-12px) scale(1.18)}100%{opacity:0;transform:translate(-50%,-65px) scale(.95)}}
+#damage-direction{position:absolute;left:50%;top:50%;width:45vmin;height:45vmin;max-width:480px;max-height:480px;border-radius:50%;pointer-events:none;opacity:0;background:conic-gradient(from -15deg,rgba(255,112,111,.8) 0deg,transparent 30deg 330deg,rgba(255,112,111,.8) 360deg);mask:radial-gradient(circle,transparent 59%,#000 77%,transparent 85%);transition:opacity .15s}
+@media(prefers-reduced-motion:reduce){.damage-number{animation-duration:.01ms}#hitmarker.show{animation-duration:.01ms}}
 #center-toast,#pickup-toast{position:absolute;left:50%;transform:translateX(-50%);text-align:center;opacity:0;transition:opacity .25s;white-space:nowrap;text-shadow:0 2px 14px #123}
 #center-toast{top:30%;font:800 34px 'Barlow Condensed',sans-serif;letter-spacing:.06em;color:var(--ice)}
 #pickup-toast{top:58%;font:600 12px 'IBM Plex Mono',monospace;letter-spacing:.09em;color:var(--teal)}
@@ -143,6 +155,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--amber);outline-
 @media(max-height:650px){#menu{align-items:flex-start}.menu-inner{margin:12px auto}.menu-hero{padding-top:24px}.menu-panel{padding-top:20px;padding-bottom:20px}.panel-kicker{margin-bottom:16px}}
 #touch-controls,.touch-copy{display:none}
 @media(pointer:coarse){
+  .enemy-health{width:76px;height:11px;padding:1px}
   html,body,#app{height:100%;height:100dvh;overscroll-behavior:none}
   #game-canvas,#touch-controls,#touch-controls button,#move-stick{touch-action:none}
   #touch-controls{display:block;position:absolute;inset:0;z-index:4;pointer-events:none}
@@ -192,5 +205,10 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--amber);outline-
   #touch-jump{width:61px;height:61px;right:calc(92px + env(safe-area-inset-right))}
   #touch-slide{width:51px;height:51px;right:calc(88px + env(safe-area-inset-right));bottom:calc(101px + env(safe-area-inset-bottom))}
   #touch-reload{right:calc(21px + env(safe-area-inset-right));bottom:calc(166px + env(safe-area-inset-bottom))}
+}
+@media(pointer:coarse) and (orientation:landscape) and (max-height:500px){
+  #weapon-slots{top:calc(42px + env(safe-area-inset-top));width:min(210px,calc(100vw - 350px));gap:2px}
+  .wslot{height:29px;font-size:12px}
+  .wslot .k{font-size:7px}
 }
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{animation-duration:.01ms!important;transition-duration:.01ms!important}}

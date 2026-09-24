@@ -20,10 +20,22 @@ function tube(g,m,r1,r2,len,x,y,z,rx=Math.PI/2,ry=0,rz=0,sides=12){
   return add(g,new THREE.CylinderGeometry(r1,r2,len,sides),m,x,y,z,rx,ry,rz);
 }
 function ring(g,m,r,thick,x,y,z){ return add(g,new THREE.TorusGeometry(r,thick,7,24),m,x,y,z); }
+function bolt(g,x,y,z){
+  return add(g,new THREE.CylinderGeometry(0.016,0.016,0.009,6),brass,x,y,z,Math.PI/2);
+}
 function edge(g,m,z,w=0.27){
   box(g,m,w,0.024,0.09,0,0.132,z);
   box(g,m,0.022,0.095,0.09,-w/2,0.077,z);
   box(g,m,0.022,0.095,0.09,w/2,0.077,z);
+}
+function reloadCell(parent, glow, x, y, z, width=0.15, height=0.22, depth=0.16){
+  const cell=new THREE.Group();
+  cell.position.set(x,y,z);
+  parent.add(cell);
+  box(cell,inset,width,height,depth);
+  box(cell,brass,width+0.025,0.045,depth+0.025,0,-height/2,0);
+  box(cell,glow,width*0.72,0.038,depth+0.003,0,0.025,0).castShadow=false;
+  return cell;
 }
 function reflex(g,color,y,z,width,height){
   const glow=new THREE.MeshBasicMaterial({color,transparent:true,opacity:0.9,depthWrite:false});
@@ -41,6 +53,7 @@ function createDualPistols(){
   const g=new THREE.Group();
   const glow=emitter(0xffd166);
   const muzzles=[];
+  const reloadParts=[];
   for(const side of [-1,1]){
     const p=new THREE.Group();
     p.position.set(side*0.29,-0.035,0);
@@ -51,6 +64,7 @@ function createDualPistols(){
     box(p,shellLight,0.22,0.105,0.43,0,0.09,-0.12);
     box(p,shell,0.245,0.065,0.27,0,0.16,-0.05);
     box(p,brass,0.25,0.045,0.12,0,0.11,-0.32);
+    for(const z of [0.01,0.06,0.11]) box(p,inset,0.20,0.012,0.015,0,0.197,z);
     for(const x of [-1,1]){
       box(p,shell,0.035,0.115,0.36,x*0.125,0.02,-0.13);
       box(p,glow,0.012,0.027,0.23,x*0.146,0.045,-0.16);
@@ -60,6 +74,8 @@ function createDualPistols(){
     ring(p,glow,0.055,0.011,0,0.015,-0.669);
     box(p,grip,0.13,0.3,0.15,0,-0.19,0.10,-0.18);
     box(p,brass,0.15,0.04,0.17,0,-0.35,0.12);
+    for(const y of [-0.26,-0.20,-0.14]) box(p,inset,0.135,0.012,0.16,0,y,0.10,-0.18);
+    reloadParts.push(reloadCell(p,glow,side*0.16,-0.04,-0.16,0.10,0.14,0.23));
     box(p,inset,0.095,0.2,0.12,0,-0.29,-0.09,0.12);
     box(p,glow,0.11,0.035,0.075,0,0.19,-0.34);
     box(p,shellLight,0.11,0.055,0.05,0,0.19,0.07);
@@ -70,6 +86,7 @@ function createDualPistols(){
   g.userData.muzzles=muzzles;
   g.userData.sight=new THREE.Vector3(0,0.19,0.07);
   g.userData.adsEye=0.55;
+  g.userData.reloadParts=reloadParts;
   return g;
 }
 
@@ -90,6 +107,7 @@ function createRocketLauncher(){
     box(g,glow,0.025,0.065,0.52,side*0.273,0.045,-0.39);
     box(g,brass,0.07,0.13,0.19,side*0.23,0.05,-0.72);
     box(g,shell,0.16,0.085,0.30,side*0.19,-0.11,0.31);
+    for(const z of [-0.62,-0.43,-0.24]) box(g,inset,0.078,0.035,0.025,side*0.235,0.135,z);
   }
   box(g,shellLight,0.24,0.10,0.70,0,0.24,-0.25);
   box(g,grip,0.15,0.32,0.18,0,-0.34,0.30,-0.16);
@@ -102,6 +120,7 @@ function createRocketLauncher(){
   g.userData.muzzle=muzzle;
   g.userData.sight=sight;
   g.userData.adsEye=0.67;
+  g.userData.reloadParts=[reloadCell(g,glow,0.30,0.01,-0.31,0.13,0.16,0.30)];
   return g;
 }
 
@@ -119,10 +138,17 @@ export function createWeapon(id){
   box(g,shellLight,0.18,0.07,0.24,0,0.17,0.10);
   box(g,grip,0.12,0.35,0.16,0,-0.25,0.22,-0.22);
   box(g,brass,0.15,0.055,0.23,0,-0.41,0.27);
+  const reloadParts=[reloadCell(g,energy,0.20,0.01,-0.28,0.12,0.15,0.28)];
   box(g,shell,0.23,0.11,0.34,0,-0.01,0.52);
   box(g,grip,0.24,0.12,0.16,0,-0.03,0.76);
   box(g,energy,0.14,0.025,0.31,0,0.16,-0.10);
   for(const x of [-1,1]) box(g,brass,0.025,0.14,0.26,x*0.16,0.025,0.13);
+  // Recessed side panels and fasteners break up the broad receiver silhouette.
+  for(const side of [-1,1]){
+    box(g,inset,0.012,0.105,0.25,side*0.163,0.045,0.10);
+    box(g,energy,0.014,0.018,0.16,side*0.172,0.082,0.08).castShadow=false;
+    for(const z of [-0.04,0.22]) bolt(g,side*0.174,-0.002,z);
+  }
 
   if(id==='pulse'){
     box(g,shell,0.29,0.19,0.53,0,0,-0.38);
@@ -207,6 +233,7 @@ export function createWeapon(id){
   g.add(muzzle); g.userData.muzzle=muzzle;
   g.userData.sight=sight;
   g.userData.adsEye=adsEye;
+  g.userData.reloadParts=reloadParts;
   g.traverse(part=>{ if(part.isMesh) part.castShadow=false; });
   return g;
 }
@@ -223,26 +250,34 @@ export function createPlayer(colorHex, name, makeNameSprite, makeWeaponWorld){
   box(torso,suit,0.47,0.66,0.30);
   box(torso,armor,0.53,0.33,0.34,0,0.11,0.015);
   box(torso,edgeMat,0.38,0.20,0.08,0,-0.15,0.18);
+  box(torso,grip,0.37,0.16,0.32,0,-0.35,0);
+  box(torso,brass,0.41,0.035,0.34,0,-0.30,0);
   box(torso,accent,0.25,0.035,0.045,0,0.17,0.205);
   box(torso,brass,0.10,0.23,0.035,0,-0.02,0.225);
   for(const x of [-1,1]){
     box(torso,armor,0.11,0.30,0.07,x*0.26,-0.02,0.16,0,0,x*0.14);
     box(torso,accent,0.045,0.12,0.03,x*0.23,0.07,0.205);
+    box(torso,edgeMat,0.055,0.25,0.21,x*0.245,-0.22,0.005,0,0,x*0.12);
   }
   const head=new THREE.Group(); head.position.y=1.72; g.add(head);
   box(head,suit,0.34,0.31,0.32);
   box(head,armor,0.37,0.10,0.35,0,0.12,0);
+  box(head,armor,0.26,0.055,0.24,0,0.185,-0.035);
   box(head,edgeMat,0.38,0.13,0.11,0,0.025,0.135);
   const visor=box(head,accent,0.29,0.075,0.035,0,0.052,0.207);
+  box(head,inset,0.31,0.11,0.018,0,0.052,0.185);
+  visor.position.z=0.218;
   box(head,brass,0.07,0.07,0.045,0,-0.075,0.199);
   for(const x of [-1,1]){
     box(head,armor,0.065,0.15,0.18,x*0.19,0.015,0);
     box(head,accent,0.026,0.075,0.03,x*0.226,0.015,0.04);
+    box(head,edgeMat,0.10,0.10,0.13,x*0.12,-0.11,0.055,0,0,x*0.16);
   }
   function limb(x, shoulder){
     const arm=new THREE.Group(); arm.position.set(x,shoulder,0); g.add(arm);
     box(arm,suit,0.15,0.48,0.16,0,-0.22,0);
     box(arm,armor,0.23,0.22,0.24,0,-0.03,0.015);
+    add(arm,new THREE.SphereGeometry(0.11,10,8),edgeMat,0,-0.27,0);
     box(arm,edgeMat,0.19,0.19,0.20,0,-0.30,0);
     box(arm,accent,0.038,0.16,0.018,Math.sign(x)*0.105,-0.29,0.11);
     box(arm,grip,0.17,0.10,0.18,0,-0.49,0.015);
@@ -253,14 +288,20 @@ export function createPlayer(colorHex, name, makeNameSprite, makeWeaponWorld){
     const group=new THREE.Group(); group.position.set(x,0.83,0); g.add(group);
     box(group,suit,0.20,0.57,0.22,0,-0.24,0);
     box(group,armor,0.22,0.23,0.25,0,-0.07,0);
+    add(group,new THREE.SphereGeometry(0.12,10,8),suit,0,-0.35,0);
     box(group,edgeMat,0.24,0.25,0.24,0,-0.40,0);
     box(group,accent,0.07,0.045,0.02,0,-0.39,0.131);
     box(group,grip,0.24,0.13,0.36,0,-0.73,0.07);
+    box(group,armor,0.22,0.065,0.19,0,-0.48,0.11);
     return group;
   }
   const legL=leg(-0.15), legR=leg(0.15);
   box(g,inset,0.37,0.56,0.23,0,1.16,-0.29);
   box(g,armor,0.40,0.13,0.25,0,1.40,-0.28);
+  for(const side of [-1,1]){
+    box(g,edgeMat,0.10,0.34,0.29,side*0.21,1.19,-0.31);
+    box(g,accent,0.025,0.22,0.018,side*0.265,1.22,-0.445).castShadow=false;
+  }
   const flameL=add(g,new THREE.ConeGeometry(0.09,0.5,9),accent,-0.13,0.67,-0.32,Math.PI);
   const flameR=flameL.clone(); flameR.position.x=0.13; g.add(flameR);
   flameL.visible=flameR.visible=false;
@@ -270,6 +311,6 @@ export function createPlayer(colorHex, name, makeNameSprite, makeWeaponWorld){
   const gun=makeWeaponWorld('pulse'); gun.scale.setScalar(0.75); gun.position.set(0.27,1.13,0.48); gun.rotation.y=Math.PI; g.add(gun);
   const flash=new THREE.PointLight(0xffffff,0,7); flash.position.set(0.27,1.16,1.14); g.add(flash);
   const tag=makeNameSprite(name,colorHex); g.add(tag);
-  g.userData={torso,head,visor,armL,armR,legL,legR,flameL,flameR,jetGlow,gun,flash,tag,tagName:name,accent,walkPhase:Math.random()*10,dead:false,deadT:0};
+  g.userData={torso,head,visor,armL,armR,legL,legR,flameL,flameR,jetGlow,gun,flash,tag,tagName:name,accent,walkPhase:Math.random()*10,animT:0,stride:0,airBlend:0,dead:false,deadT:0};
   return g;
 }

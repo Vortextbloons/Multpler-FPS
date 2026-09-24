@@ -98,6 +98,7 @@ export class Net {
         r.pos = { x: payload.p[0], y: payload.p[1], z: payload.p[2] };
         r.yaw = payload.r[0]; r.pitch = payload.r[1];
         r.weapon = payload.w; r.alive = payload.a; r.jet = payload.j; r.firing = payload.f;
+        if(Number.isFinite(payload.h)) r.health = Math.max(0, Math.min(100, payload.h));
         r.kills = payload.k??r.kills??0; r.deaths = payload.d??r.deaths??0;
         r.lastSeen = performance.now(); r.lastPosRx = performance.now();
         // interp buffer
@@ -208,6 +209,7 @@ export class Net {
       p,
       r: [+s.yaw.toFixed(3), +s.pitch.toFixed(3)],
       w: s.weapon, a: s.alive, j: !!s.jet, f: !!s.firing,
+      h: Math.max(0, Math.min(100, Math.round(s.health ?? 100))),
       k: this.me.kills||0, d: this.me.deaths||0,
     }});
   }
