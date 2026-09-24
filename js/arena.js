@@ -10,6 +10,35 @@ export const ARENA = {
   bounds: 51,
 };
 
+const arenaLightRig = [];
+const farTrimMeshes = [];
+let sunLight = null;
+
+export function getArenaSun(){ return sunLight; }
+
+// Low keeps the sun and hemisphere, drops fill lights, and swaps distant trim
+// onto Lambert. High restores the original intensities and standard materials.
+export function applyArenaQuality(low){
+  for(const entry of arenaLightRig){
+    if(!low || entry.role === 'core'){
+      entry.light.visible = true;
+      entry.light.intensity = entry.intensity;
+      entry.light.distance = entry.distance;
+    } else if(entry.role === 'landmark'){
+      entry.light.visible = true;
+      entry.light.intensity = entry.intensity * 0.55;
+      entry.light.distance = entry.distance * 0.75;
+    } else {
+      entry.light.visible = false;
+      entry.light.intensity = 0;
+    }
+  }
+  for(const mesh of farTrimMeshes){
+    const next = low ? mesh.userData.cheapMaterial : mesh.userData.richMaterial;
+    if(next && mesh.material !== next) mesh.material = next;
+  }
+}
+
 function addBox(scene, colliders, x,y,z, w,h,d, mat){
   const m = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), mat);
   m.position.set(x,y,z);
@@ -22,6 +51,9 @@ function addBox(scene, colliders, x,y,z, w,h,d, mat){
 export function buildArena(scene){
   ARENA.colliders.length = 0; ARENA.spawns.length=0; ARENA.weaponSpawns.length=0; ARENA.jumpPads.length=0; ARENA.navPoints.length=0;
   spinRings.length=0;
+  arenaLightRig.length = 0;
+  farTrimMeshes.length = 0;
+  sunLight = null;
 
   scene.fog = new THREE.FogExp2(0x172e37, 0.010);
   scene.background = new THREE.Color(0x172e37);
@@ -33,12 +65,17 @@ export function buildArena(scene){
   sun.shadow.mapSize.set(2048,2048);
   sun.shadow.camera.left=-58; sun.shadow.camera.right=58; sun.shadow.camera.top=58; sun.shadow.camera.bottom=-58;
   scene.add(sun);
-  const coreLight = new THREE.PointLight(0x62dfd1, 38, 34); coreLight.position.set(0,8,0); scene.add(coreLight);
-  const magLight = new THREE.PointLight(0xffb56d, 22, 32); magLight.position.set(-20,6,20); scene.add(magLight);
-  const orgLight = new THREE.PointLight(0xffb56d, 18, 28); orgLight.position.set(20,5,-20); scene.add(orgLight);
-  const dockLight = new THREE.PointLight(0x65d9de, 20, 27); dockLight.position.set(0,8,-43); scene.add(dockLight);
-  const coolantLight = new THREE.PointLight(0x86e8aa, 18, 27); coolantLight.position.set(0,7,43); scene.add(coolantLight);
-  const furnaceLight = new THREE.PointLight(0xff9a50, 22, 28); furnaceLight.position.set(-43,7,0); scene.add(furnaceLight);
+  sunLight = sun;
+  function trackLight(light, role){
+    arenaLightRig.push({light, role, intensity:light.intensity, distance:light.distance});
+    scene.add(light);
+  }
+  const coreLight = new THREE.PointLight(0x62dfd1, 38, 34); coreLight.position.set(0,8,0); trackLight(coreLight, 'core');
+  const magLight = new THREE.PointLight(0xffb56d, 22, 32); magLight.position.set(-20,6,20); trackLight(magLight, 'fill');
+  const orgLight = new THREE.PointLight(0xffb56d, 18, 28); orgLight.position.set(20,5,-20); trackLight(orgLight, 'fill');
+  const dockLight = new THREE.PointLight(0x65d9de, 20, 27); dockLight.position.set(0,8,-43); trackLight(dockLight, 'landmark');
+  const coolantLight = new THREE.PointLight(0x86e8aa, 18, 27); coolantLight.position.set(0,7,43); trackLight(coolantLight, 'fill');
+  const furnaceLight = new THREE.PointLight(0xff9a50, 22, 28); furnaceLight.position.set(-43,7,0); trackLight(furnaceLight, 'landmark');
 
   const mats = {
     floor: new THREE.MeshStandardMaterial({color:0x394d53, roughness:0.88, metalness:0.24}),
@@ -52,6 +89,34 @@ export function buildArena(scene){
     glass: new THREE.MeshStandardMaterial({color:0x72d5cf, transparent:true, opacity:0.20, emissive:0x4bdad0, emissiveIntensity:0.45, side:THREE.DoubleSide}),
     ramp: new THREE.MeshStandardMaterial({color:0x718c8f, roughness:0.62, metalness:0.5}),
   };
+  // Distant shell trim uses its own standard material so Low can swap it to Lambert
+  // without flattening the floor and cover the player actually stands next to.
+  const farTrim = new THREE.MeshStandardMaterial({color:0xb1bbb0,metalness:0.68,roughness:0.37});
+  const farTrimCheap = new THREE.MeshLambertMaterial({color:0xb1bbb0});
+  const farRecess = new THREE.MeshStandardMaterial({color:0x203740,metalness:0.45,roughness:0.68});
+  const farRecessCheap = new THREE.MeshLambertMaterial({color:0x203740});
+  const haloRich = new THREE.MeshStandardMaterial({color:0x111827, emissive:0x22d3ee, emissiveIntensity:0.9, metalness:0.8, roughness:0.3});
+  const haloCheap = new THREE.MeshLambertMaterial({color:0x111827, emissive:0x22d3ee, emissiveIntensity:0.9});
+  const rimCheap = new THREE.MeshLambertMaterial({color:0x568f75, emissive:0x9adeaa, emissiveIntensity:1.2});
+  const farPending = [];
+  const farBatches = [];
+  const removedFar = new Set();
+  const looseBoxes = [];
+  function asFar(mesh, cheap){
+    mesh.userData.richMaterial = mesh.material;
+    mesh.userData.cheapMaterial = cheap;
+    farPending.push(mesh);
+    return mesh;
+  }
+  function looseBox(w,h,d,mat,x,y,z){
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), mat);
+    m.position.set(x,y,z);
+    m.castShadow = false;
+    m.receiveShadow = false;
+    scene.add(m);
+    looseBoxes.push(m);
+    return m;
+  }
 
   // Ground — segmented sci-fi plates
   const ground = new THREE.Mesh(new THREE.BoxGeometry(ARENA.size,1,ARENA.size), mats.floor);
@@ -65,8 +130,7 @@ export function buildArena(scene){
 
   // Glowing edge strips on floor
   for (const [x,z,w,d,c] of [[0,-16,20,0.3,'cyan'],[0,16,20,0.3,'cyan'],[-16,0,0.3,20,'magenta'],[16,0,0.3,20,'magenta']]){
-    const s = new THREE.Mesh(new THREE.BoxGeometry(w,0.06,d), mats[c]);
-    s.position.set(x,0.05,z); scene.add(s);
+    looseBox(w,0.06,d, mats[c], x,0.05,z);
   }
 
   // Perimeter walls with neon tops
@@ -74,8 +138,7 @@ export function buildArena(scene){
   const walls = [[0,-52.5,106,WH,1],[0,52.5,106,WH,1],[-52.5,0,1,WH,106],[52.5,0,1,WH,106]];
   for(const [x,z,w,h,d] of walls){
     addBox(scene, ARENA.colliders, x, h/2, z, w,h,d, mats.wall);
-    const strip = new THREE.Mesh(new THREE.BoxGeometry(w===1?1.2:w, 0.25, d===1?1.2:d), mats.cyan);
-    strip.position.set(x, h+0.1, z); scene.add(strip);
+    looseBox(w===1?1.2:w, 0.25, d===1?1.2:d, mats.cyan, x, h+0.1, z);
   }
   // Corner pillar landmarks (color-coded, tall) — 4 corners
   const corners = [[-26,-26,mats.cyan,'NW'],[26,-26,mats.orange,'NE'],[-26,26,mats.magenta,'SW'],[26,26,mats.green,'SE']];
@@ -167,8 +230,7 @@ export function buildArena(scene){
   ];
   for(const [x,y,z,w,h,d] of crates){
     addBox(scene, ARENA.colliders, x,y,z, w,h,d, mats.wall);
-    const top = new THREE.Mesh(new THREE.BoxGeometry(w+0.1,0.1,d+0.1), mats.orange);
-    top.position.set(x,y+h/2+0.05,z); scene.add(top);
+    looseBox(w+0.1,0.1,d+0.1, mats.orange, x,y+h/2+0.05,z);
   }
 
   // Side tunnels (tight combat) — two short walls forming corridors east/west (gaps kept wide)
@@ -196,6 +258,7 @@ export function buildArena(scene){
     for(const y of [2,5,7.1]){
       const rim = new THREE.Mesh(new THREE.TorusGeometry(3.1,0.18,8,24), mats.green);
       rim.position.set(x,y,43); rim.rotation.x=Math.PI/2; scene.add(rim);
+      asFar(rim, rimCheap);
     }
   }
   addBox(scene, ARENA.colliders, 0,3.1,43, 7,0.6,14, mats.ramp);
@@ -227,13 +290,9 @@ export function buildArena(scene){
     addBox(scene, ARENA.colliders, x,1.95,z, 0.7,3.9,0.7, mats.dark);
   for(const z of [-7,7]) addBox(scene, ARENA.colliders, 37,0.9,z, 3,1.8,2, mats.wall);
   for(const x of [38,48]){
-    const rail = new THREE.Mesh(new THREE.BoxGeometry(0.2,0.07,45), mats.magenta);
-    rail.position.set(x,0.09,0); scene.add(rail);
+    looseBox(0.2,0.07,45, mats.magenta, x,0.09,0);
   }
-  for(let z=-22;z<=22;z+=4){
-    const tie = new THREE.Mesh(new THREE.BoxGeometry(10,0.06,0.22), mats.dark);
-    tie.position.set(43,0.07,z); scene.add(tie);
-  }
+  for(let z=-22;z<=22;z+=4) looseBox(10,0.06,0.22, mats.dark, 43,0.07,z);
 
   // Small corner barricades interrupt long sightlines without closing the loop.
   for(const x of [-42,42]) for(const z of [-42,42]){
@@ -243,21 +302,23 @@ export function buildArena(scene){
   }
   // Inlaid route lines point back toward the reactor from each sector.
   for(const [x,z,w,d] of [[0,-34,0.25,17],[0,34,0.25,17],[-34,0,17,0.25],[34,0,17,0.25]]){
-    const line = new THREE.Mesh(new THREE.BoxGeometry(w,0.035,d), mats.cyan);
-    line.position.set(x,0.06,z); scene.add(line);
+    looseBox(w,0.035,d, mats.cyan, x,0.06,z);
   }
 
   // Overhead halo ring — visual landmark
-  const halo = new THREE.Mesh(new THREE.TorusGeometry(18,0.35,10,60), new THREE.MeshStandardMaterial({color:0x111827, emissive:0x22d3ee, emissiveIntensity:0.9, metalness:0.8, roughness:0.3}));
+  const halo = new THREE.Mesh(new THREE.TorusGeometry(18,0.35,10,60), haloRich);
   halo.position.set(0,20,0); halo.rotation.x=Math.PI/2; scene.add(halo); spinRings.push(halo);
+  asFar(halo, haloCheap);
 
   // Jump pads
   const padSpots = [[-8,0,-8],[8,0,-8],[-8,0,8],[8,0,8],[0,0,-49],[9,0,36],[-43,0,6],[43,0,7]];
   const padMat = new THREE.MeshStandardMaterial({color:0x052e2b, emissive:0x4ade80, emissiveIntensity:1.5});
+  const padBeamGeo = new THREE.CylinderGeometry(1.0,1.0,6,12,1,true);
+  const padBeamMat = new THREE.MeshBasicMaterial({color:0x4ade80, transparent:true, opacity:0.12, side:THREE.DoubleSide});
   for(const [x,y,z] of padSpots){
     const pad = new THREE.Mesh(new THREE.CylinderGeometry(1.3,1.5,0.25,16), padMat);
     pad.position.set(x,0.13,z); scene.add(pad);
-    const beam = new THREE.Mesh(new THREE.CylinderGeometry(1.0,1.0,6,12,1,true), new THREE.MeshBasicMaterial({color:0x4ade80, transparent:true, opacity:0.12, side:THREE.DoubleSide}));
+    const beam = new THREE.Mesh(padBeamGeo, padBeamMat);
     beam.position.set(x,3,z); scene.add(beam);
     ARENA.jumpPads.push({pos:new THREE.Vector3(x,0,z), radius:1.6, power:13});
   }
@@ -294,9 +355,10 @@ export function buildArena(scene){
   ARENA.weaponSpawns.forEach(w=>ARENA.navPoints.push(w.pos.clone()));
 
   // spawn beacons (visual)
+  const beaconGeo = new THREE.CylinderGeometry(0.8,0.8,3,12,1,true);
   const beaconMat = new THREE.MeshBasicMaterial({color:0x22d3ee, transparent:true, opacity:0.25});
   for(const s of ARENA.spawns){
-    const b = new THREE.Mesh(new THREE.CylinderGeometry(0.8,0.8,3,12,1,true), beaconMat);
+    const b = new THREE.Mesh(beaconGeo, beaconMat);
     b.position.set(s.pos.x, 1.5, s.pos.z); scene.add(b);
   }
 
@@ -325,15 +387,15 @@ export function buildArena(scene){
   // Continuous wall ribs and service ducts give scale and depth to the shell.
   for(let v=-49;v<=49;v+=7){
     for(const side of [-1,1]){
-      detail(new THREE.BoxGeometry(0.36,10.8,0.55),recess,v,5.5,side*51.88);
-      detail(new THREE.BoxGeometry(0.55,10.8,0.36),recess,side*51.88,5.5,v);
-      detail(new THREE.BoxGeometry(3.3,0.16,0.22),trim,v,8.4,side*51.82);
-      detail(new THREE.BoxGeometry(0.22,0.16,3.3),trim,side*51.82,8.4,v);
+      asFar(detail(new THREE.BoxGeometry(0.36,10.8,0.55),farRecess,v,5.5,side*51.88), farRecessCheap);
+      asFar(detail(new THREE.BoxGeometry(0.55,10.8,0.36),farRecess,side*51.88,5.5,v), farRecessCheap);
+      asFar(detail(new THREE.BoxGeometry(3.3,0.16,0.22),farTrim,v,8.4,side*51.82), farTrimCheap);
+      asFar(detail(new THREE.BoxGeometry(0.22,0.16,3.3),farTrim,side*51.82,8.4,v), farTrimCheap);
     }
   }
-  detail(new THREE.CylinderGeometry(0.24,0.24,102,10),trim,-48.8,3.2,0,Math.PI/2);
-  detail(new THREE.CylinderGeometry(0.24,0.24,102,10),trim,48.8,3.2,0,Math.PI/2);
-  for(const side of [-1,1]) detail(new THREE.CylinderGeometry(0.24,0.24,102,10),trim,0,3.2,side*48.8,0,0,Math.PI/2);
+  asFar(detail(new THREE.CylinderGeometry(0.24,0.24,102,10),farTrim,-48.8,3.2,0,Math.PI/2), farTrimCheap);
+  asFar(detail(new THREE.CylinderGeometry(0.24,0.24,102,10),farTrim,48.8,3.2,0,Math.PI/2), farTrimCheap);
+  for(const side of [-1,1]) asFar(detail(new THREE.CylinderGeometry(0.24,0.24,102,10),farTrim,0,3.2,side*48.8,0,0,Math.PI/2), farTrimCheap);
   // Cover receives framed panels and orange top edge warnings.
   for(const [x,y,z,w,h,d] of crates){
     detail(new THREE.BoxGeometry(Math.max(0.4,w-0.34),Math.max(0.3,h-0.45),0.045),recess,x,y,z+d/2+0.03);
@@ -390,18 +452,55 @@ export function buildArena(scene){
       if(meshes.length<2) continue;
       const batch=new THREE.InstancedMesh(unitBox,meshes[0].material,meshes.length);
       batch.castShadow=false; batch.receiveShadow=true;
+      if(meshes[0].userData.cheapMaterial){
+        batch.userData.richMaterial=batch.material;
+        batch.userData.cheapMaterial=meshes[0].userData.cheapMaterial;
+        farBatches.push(batch);
+      }
       meshes.forEach((mesh,i)=>{
         const {width,height,depth}=mesh.geometry.parameters;
         mesh.scale.set(width,height,depth);
         mesh.updateMatrix();
         batch.setMatrixAt(i,mesh.matrix);
         scene.remove(mesh);
+        if(mesh.userData.cheapMaterial) removedFar.add(mesh);
         mesh.geometry.dispose();
       });
       batch.instanceMatrix.needsUpdate=true;
       scene.add(batch);
     }
   }
+
+  // Repeated unshadowed trim (ties, caps, lane lines) shares one unit box per tile.
+  // Shadow flags stay off so the High sun shadow matches the previous individual meshes.
+  if(THREE.InstancedMesh && looseBoxes.length){
+    const groups=new Map();
+    const unitBox=new THREE.BoxGeometry(1,1,1);
+    const disposed=new Set();
+    for(const mesh of looseBoxes){
+      const key=`${mesh.material.uuid}|${Math.floor(mesh.position.x/64)},${Math.floor(mesh.position.z/64)}`;
+      if(!groups.has(key)) groups.set(key,[]);
+      groups.get(key).push(mesh);
+    }
+    for(const meshes of groups.values()){
+      if(meshes.length<2) continue;
+      const batch=new THREE.InstancedMesh(unitBox,meshes[0].material,meshes.length);
+      batch.castShadow=false; batch.receiveShadow=false;
+      batch.userData.allowUnshadowed=true;
+      meshes.forEach((mesh,i)=>{
+        const {width,height,depth}=mesh.geometry.parameters;
+        mesh.scale.set(width,height,depth);
+        mesh.updateMatrix();
+        batch.setMatrixAt(i,mesh.matrix);
+        scene.remove(mesh);
+        if(!disposed.has(mesh.geometry)){ disposed.add(mesh.geometry); mesh.geometry.dispose(); }
+      });
+      batch.instanceMatrix.needsUpdate=true;
+      scene.add(batch);
+    }
+  }
+  farTrimMeshes.push(...farBatches);
+  for(const mesh of farPending) if(!removedFar.has(mesh)) farTrimMeshes.push(mesh);
 }
 
 const spinRings = [];
