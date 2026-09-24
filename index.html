@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>NEON FORGE II — Arena Shooter</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="styles.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700;800;900&family=Barlow:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+    "@supabase/supabase-js": "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm"
+  }
+}
+</script>
+</head>
+<body>
+<div id="app">
+  <canvas id="game-canvas"></canvas>
+  <div id="vignette"></div>
+  <div id="damage-overlay"></div>
+  <div id="heal-overlay"></div>
+
+  <!-- HUD -->
+  <div id="hud" class="hidden">
+    <div id="ads-overlay" aria-hidden="true">
+      <div class="scope-view">
+        <div class="scope-horizontal"></div><div class="scope-vertical"></div>
+        <div class="scope-center"></div>
+        <span class="scope-label">LX / PRECISION OPTIC</span>
+        <span class="scope-mark scope-mark-left">50</span><span class="scope-mark scope-mark-right">100</span>
+      </div>
+    </div>
+    <div id="crosshair">
+      <div class="ch-dot"></div>
+      <div class="ch-t"></div><div class="ch-b"></div><div class="ch-l"></div><div class="ch-r"></div>
+      <div id="hitmarker"></div>
+    </div>
+    <div id="topbar">
+      <div id="room-label">NF / 02 <span>PUBLIC ARENA 01</span></div>
+      <div id="session-clock">00:00</div>
+      <div id="net-status"><span id="net-dot"></span><span id="net-text">OFFLINE</span><span id="fps-text"></span></div>
+    </div>
+    <div id="killfeed"></div>
+    <div id="bottom-left">
+      <div id="health-wrap">
+        <div class="hud-label">VITALS <span>01 / LIFE SUPPORT</span></div>
+        <div id="health-num">100</div>
+        <div id="health-bar-bg"><div id="health-bar"></div></div>
+        <div id="fuel-bar-bg"><div id="fuel-bar"></div><span>JET</span></div>
+      </div>
+      <div id="weapon-slots"></div>
+    </div>
+    <div id="bottom-right">
+      <div class="hud-label">LOADOUT <span>02 / ACTIVE</span></div>
+      <div id="ammo-wrap"><span id="ammo-mag">30</span><span id="ammo-div">/</span><span id="ammo-res">∞</span></div>
+      <div id="weapon-name">K-7 PULSE REPEATER</div>
+      <div id="reload-hint"></div>
+    </div>
+    <div id="respawn-overlay" class="hidden">
+      <div id="respawn-title">ELIMINATED</div>
+      <div id="respawn-sub"></div>
+      <div id="respawn-timer">3</div>
+    </div>
+    <div id="focus-overlay" class="hidden">
+      <div class="focus-code">CONTROL LINK LOST / 02</div>
+      <h2>READY WHEN YOU ARE.</h2>
+      <p>Click below to return to the arena.</p>
+      <button id="btn-resume" class="btn primary"><span class="btn-big">RESUME GAME</span></button>
+    </div>
+    <div id="scoreboard" class="hidden">
+      <div class="sb-title">NEON FORGE II / STANDINGS <span id="sb-count"></span></div>
+      <div class="sb-head"><span>#</span><span>PLAYER</span><span>K</span><span>D</span><span>STREAK</span><span>PING</span></div>
+      <div id="sb-rows"></div>
+      <div class="sb-foot">LIVE STANDINGS</div>
+    </div>
+    <div id="center-toast"></div>
+    <div id="pickup-toast"></div>
+    <div id="controls-hint">WASD MOVE <i>/</i> SHIFT SPRINT <i>/</i> SPACE JUMP + JET <i>/</i> C SLIDE <i>/</i> RMB AIM <i>/</i> LMB FIRE <i>/</i> R RELOAD <i>/</i> 1–7 SWAP <i>/</i> TAB SCORES</div>
+    <div id="touch-controls" aria-label="Touch game controls">
+      <div id="move-stick" aria-label="Move"><div id="move-knob"></div></div>
+      <button id="touch-scores" class="touch-utility" aria-label="Show standings">SCORES</button>
+      <button id="touch-reload" class="touch-action" aria-label="Reload">R</button>
+      <button id="touch-slide" class="touch-action" aria-label="Slide">SLIDE</button>
+      <button id="touch-aim" class="touch-action" aria-label="Aim">AIM</button>
+      <button id="touch-jump" class="touch-action" aria-label="Jump and jetpack">JUMP</button>
+      <button id="touch-fire" class="touch-action" aria-label="Fire">FIRE</button>
+    </div>
+  </div>
+
+  <!-- MENU -->
+  <div id="menu">
+    <div id="menu-bg-fx"></div>
+    <div class="menu-inner">
+      <div class="menu-hero">
+        <div class="logo-sub">THE FOUNDRY IS LIVE <span>/// 02</span></div>
+        <h1 class="logo">NEON<br><span>FORGE</span><sup>II</sup></h1>
+        <p class="tagline">Fight above the furnace. Own the arena.</p>
+        <div class="reactor-mark" aria-hidden="true"><div class="reactor-ring"><div class="reactor-core"></div></div><span>NF / REACTOR 02</span></div>
+        <div class="hero-spec"><span>8 OPERATORS</span><span>7 WEAPONS</span><span>ZERO SAFE GROUND</span></div>
+      </div>
+      <div class="menu-panel">
+        <div class="panel-kicker">DEPLOYMENT / CHOOSE YOUR RUN</div>
+        <div class="name-row">
+          <label for="player-name">YOUR CALLSIGN</label>
+          <div class="name-input-wrap">
+            <input id="player-name" maxlength="14" placeholder="NOVA-7" autocomplete="off">
+            <button id="reroll-name" aria-label="Randomize callsign" title="Randomize callsign">↻</button>
+          </div>
+        </div>
+        <div class="menu-buttons">
+          <button id="btn-multi" class="btn primary"><span class="btn-big">ENTER PUBLIC ARENA <b>↗</b></span><span class="btn-small">LIVE FREE FOR ALL / OPEN ROOM</span></button>
+          <button id="btn-solo" class="btn secondary"><span class="btn-big">TRAIN AGAINST BOTS <b>→</b></span><span class="btn-small">7 OPPONENTS / FIRST TO 20</span></button>
+        </div>
+        <div class="menu-status"><span id="menu-dot"></span><span id="menu-net">Connecting to arena…</span></div>
+        <div class="menu-grid">
+          <div class="menu-card"><h3>MOVE</h3><p>Double jump, slide and use your jetpack to take the high ground.</p></div>
+          <div class="menu-card"><h3>ARM</h3><p>Claim weapon pickups to build a seven gun loadout.</p></div>
+          <div class="menu-card"><h3>WIN</h3><p>Solo: first to 20. Online: fight as long as you want.</p></div>
+        </div>
+        <div class="menu-foot"><span class="desktop-copy">WASD MOVE · MOUSE AIM · CLICK TO FIRE · SPACE TO JUMP</span><span class="touch-copy">LEFT STICK MOVE · SWIPE TO LOOK · TOUCH BUTTONS TO FIGHT</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="end-screen" class="hidden">
+    <div class="end-inner">
+      <div class="logo-sub" id="end-sub">MATCH COMPLETE</div>
+      <h1 id="end-title">VICTORY</h1>
+      <div id="end-rows"></div>
+      <div class="menu-buttons"><button id="btn-again" class="btn primary"><span class="btn-big">PLAY AGAIN</span></button>
+      <button id="btn-tomenu" class="btn secondary"><span class="btn-big">MENU</span></button></div>
+    </div>
+  </div>
+
+  <div id="loading" class="hidden"><div class="spin"></div><div id="loading-text">LOADING ARENA…</div></div>
+</div>
+<script type="module" src="js/game.js"></script>
+</body>
+</html>
