@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { createWeapon, createPlayer } from './models-v2.js';
 import { WEAPONS } from './config.js';
 import { reloadPose } from './reload-animation.js';
+import { gfx } from './quality.js';
 
 // ---------- procedural weapon builders ----------
 export function makeWeaponWorld(id){ return createWeapon(id); }
@@ -149,8 +150,10 @@ export function posePlayer(mesh, opts, dt){
     mesh.rotation.z = 0;
     mesh.position.y = opts.posY - Math.min(0.6, u.deadT*0.8);
     u.flash.intensity = 0;
+    u.flash.visible = false;
     u.flameL.visible = u.flameR.visible = false;
     u.jetGlow.intensity = 0;
+    u.jetGlow.visible = false;
     return;
   } else {
     mesh.rotation.x = 0; u.deadT = 0;
@@ -178,20 +181,32 @@ export function posePlayer(mesh, opts, dt){
   u.gun.rotation.x=THREE.MathUtils.lerp(u.gun.rotation.x,firing?-pulse*0.8:0,blend);
   mesh.rotation.z=THREE.MathUtils.lerp(mesh.rotation.z,THREE.MathUtils.clamp(-(opts.strafe||0)*0.12,-0.3,0.3),blend);
   u.head.position.y=1.72+lift*0.25;
-  // jetpack
+  // jetpack — sine flicker avoids a Math.random call on every posed character
   const jet = !!opts.jet;
+  const lights = gfx().actorLights;
   u.flameL.visible = jet; u.flameR.visible = jet;
   if(jet){
-    const s = 0.7+Math.random()*0.6;
+    const s = 1 + Math.sin(u.animT * 47) * 0.3;
     u.flameL.scale.set(1,s,1); u.flameR.scale.set(1,s,1);
-    u.jetGlow.intensity = 8;
-  } else u.jetGlow.intensity = 0;
-  // firing flash
-  if(firing){ u.flash.intensity = Math.max(0,Math.sin(u.animT*55))*12; }
-  else u.flash.intensity = Math.max(0, u.flash.intensity - dt*80);
+    u.jetGlow.intensity = lights ? 8 : 0;
+    u.jetGlow.visible = lights;
+  } else {
+    u.jetGlow.intensity = 0;
+    u.jetGlow.visible = false;
+  }
+  if(firing && lights){ u.flash.intensity = Math.max(0,Math.sin(u.animT*55))*12; }
+  else u.flash.intensity = lights ? Math.max(0, u.flash.intensity - dt*80) : 0;
+  u.flash.visible = u.flash.intensity > 0.05;
 }
 
 // ---------- FX pool ----------
+// Geometries and materials are reused. High counts match the old per-shot meshes.
+const ROCKET_FIT = 0.16 / 0.22;
+
+function additiveMat(color, opacity=1){
+  return new THREE.MeshBasicMaterial({color, transparent:true, opacity, blending:THREE.AdditiveBlending, depthWrite:false});
+}
+
 export class FX {
   constructor(scene){
     this.scene = scene;
@@ -199,79 +214,196 @@ export class FX {
     this.parts = [];
     this.pulses = [];
     this.projectiles = []; // plasma and rocket shots {mesh, vel, life, owner, weapon}
-    const geo = new THREE.BufferGeometry();
-    this.tracerMat = new THREE.MeshBasicMaterial({color:0xffffff, transparent:true, opacity:0.9, blending:THREE.AdditiveBlending, depthWrite:false});
+    this._tracerPool = [];
+    this._partPool = [];
+    this._burstPool = [];
+    this._boomPool = [];
+    this._lightPool = [];
+    this._projPool = [];
+    this._liveExplosionLights = 0;
+    this._tracerGeo = new THREE.CylinderGeometry(1,1,1,6,1,true);
+    this._tracerGeo.translate(0, 0.5, 0);
+    this._partGeo = new THREE.BoxGeometry(0.06,0.06,0.06);
+    this._burstGeo = new THREE.SphereGeometry(0.13,10,8);
+    this._boomGeo = new THREE.SphereGeometry(0.5,12,12);
+    this._projGeo = new THREE.SphereGeometry(0.22,12,12);
+    this._nose = new THREE.Vector3(0,0,-1);
+    this._aim = new THREE.Vector3();
+  }
+  _takeTracer(color, opacity){
+    let m = this._tracerPool.pop();
+    if(!m){
+      m = new THREE.Mesh(this._tracerGeo, additiveMat(color, opacity));
+      m.frustumCulled = false;
+    } else {
+      m.material.color.set(color);
+      m.material.opacity = opacity;
+      m.visible = true;
+    }
+    return m;
+  }
+  _giveTracer(entry){
+    if(!entry) return;
+    this.scene.remove(entry.m);
+    entry.m.visible = false;
+    this._tracerPool.push(entry.m);
+  }
+  _spawnTracer(a, b, color, width, len, life, opacity){
+    const q = gfx();
+    if(this.tracers.length >= q.fxMaxTracers) this._giveTracer(this.tracers.shift());
+    const m = this._takeTracer(color, opacity);
+    m.scale.set(width, len, width);
+    m.position.copy(a);
+    m.lookAt(b);
+    m.rotateX(Math.PI/2);
+    this.scene.add(m);
+    this.tracers.push({m, life, max:life});
+  }
+  _takePart(color){
+    let m = this._partPool.pop();
+    if(!m){
+      m = new THREE.Mesh(this._partGeo, additiveMat(color));
+    } else {
+      m.material.color.set(color);
+      m.material.opacity = 1;
+      m.rotation.set(0,0,0);
+      m.visible = true;
+    }
+    return m;
+  }
+  _takePulseMesh(kind, color, opacity){
+    const pool = kind === 'boom' ? this._boomPool : this._burstPool;
+    if(!pool) return null;
+    let m = pool.pop();
+    if(!m){
+      const geo = kind === 'boom' ? this._boomGeo : this._burstGeo;
+      m = new THREE.Mesh(geo, additiveMat(color, opacity));
+      m.userData.pool = pool;
+    } else {
+      m.material.color.set(color);
+      m.material.opacity = opacity;
+      m.scale.set(1,1,1);
+      m.visible = true;
+    }
+    this.scene.add(m);
+    return m;
+  }
+  _takeLight(color, intensity, distance){
+    let light = this._lightPool.pop();
+    if(!light) light = new THREE.PointLight(color, intensity, distance);
+    else { light.color.set(color); light.intensity = intensity; light.distance = distance; }
+    light.visible = true;
+    this.scene.add(light);
+    return light;
+  }
+  _giveLight(light){
+    light.intensity = 0;
+    light.visible = false;
+    this.scene.remove(light);
+    this._lightPool.push(light);
   }
   tracer(a, b, color=0x22d3ee, width=0.03, life=0.09){
     const len = a.distanceTo(b);
     if(len<0.1) return;
-    const geoC = new THREE.CylinderGeometry(width,width,len,6,1,true);
-    geoC.translate(0,len/2,0);
-    const m = new THREE.Mesh(geoC, new THREE.MeshBasicMaterial({color, transparent:true, opacity:0.95, blending:THREE.AdditiveBlending, depthWrite:false}));
-    m.position.copy(a);
-    m.lookAt(b); m.rotateX(Math.PI/2);
-    this.scene.add(m);
-    this.tracers.push({m, life, max:life});
-    if(color===0xffffff || color===0xbfdbfe){
-      // rail extra glow
-      const m2 = new THREE.Mesh(geoC.clone(), new THREE.MeshBasicMaterial({color:0xffffff, transparent:true, opacity:0.6, blending:THREE.AdditiveBlending, depthWrite:false}));
-      m2.scale.set(2.5,1,2.5); m2.position.copy(a); m2.lookAt(b); m2.rotateX(Math.PI/2);
-      this.scene.add(m2); this.tracers.push({m:m2, life:life*1.6, max:life*1.6});
+    this._spawnTracer(a, b, color, width, len, life, 0.95);
+    // Rail core stays a second wider beam on High. Low keeps the single tracer.
+    if(gfx().id !== 'low' && (color===0xffffff || color===0xbfdbfe)){
+      this._spawnTracer(a, b, 0xffffff, width*2.5, len, life*1.6, 0.6);
     }
   }
   impact(p, color=0x22d3ee, n=10, speed=7){
-    for(let i=0;i<n;i++){
-      const s = new THREE.Mesh(new THREE.BoxGeometry(0.06,0.06,0.06),
-        new THREE.MeshBasicMaterial({color: Math.random()<0.4?0xffffff:color, transparent:true, blending:THREE.AdditiveBlending, depthWrite:false}));
+    const q = gfx();
+    const count = Math.max(1, Math.round(n * q.fxImpactScale));
+    for(let i=0;i<count;i++){
+      if(this.parts.length >= q.fxMaxParts) break;
+      const s = this._takePart(Math.random()<0.4 ? 0xffffff : color);
       s.position.copy(p);
-      const v = new THREE.Vector3((Math.random()-0.5),Math.random()*0.9,(Math.random()-0.5)).normalize().multiplyScalar(speed*(0.4+Math.random()*0.8));
+      const v = new THREE.Vector3((Math.random()-0.5), Math.random()*0.9, (Math.random()-0.5)).normalize().multiplyScalar(speed*(0.4+Math.random()*0.8));
       this.scene.add(s);
       this.parts.push({m:s, v, life:0.4+Math.random()*0.3, max:0.6, grav:12});
     }
-    const flash = new THREE.PointLight(color, 20, 7);
-    flash.position.copy(p); this.scene.add(flash);
+    if(!q.fxImpactLight) return;
+    const flash = this._takeLight(color, 20, 7);
+    flash.position.copy(p);
     this.pulses.push({m:flash, life:0.12, max:0.12});
   }
   hitBurst(p, head=false){
     const color=head?0xf0ab66:0xff706f;
     this.impact(p,color,head?12:7,head?8:6);
-    const pulse=new THREE.Mesh(new THREE.SphereGeometry(0.13,10,8),
-      new THREE.MeshBasicMaterial({color,transparent:true,opacity:0.56,blending:THREE.AdditiveBlending,depthWrite:false}));
+    const pulse=this._takePulseMesh('burst', color, 0.56);
     pulse.position.copy(p);
-    this.scene.add(pulse);
     this.pulses.push({m:pulse,life:0.2,max:0.2,grow:5});
   }
   explosion(p, color=0x4ade80){
+    const q = gfx();
     this.impact(p, color, 42, 17);
     this.impact(p, 0xffffff, 16, 9);
-    const flash = new THREE.PointLight(color, 110, 24);
-    flash.position.copy(p); this.scene.add(flash);
-    this.pulses.push({m:flash, life:0.38, max:0.38});
-    const sphere = new THREE.Mesh(new THREE.SphereGeometry(0.5,12,12),
-      new THREE.MeshBasicMaterial({color, transparent:true, opacity:0.7, blending:THREE.AdditiveBlending, depthWrite:false}));
-    sphere.position.copy(p); this.scene.add(sphere);
+    if(q.fxExplosionLight && this._liveExplosionLights < q.fxMaxExplosionLights){
+      const flash = this._takeLight(color, 110, 24);
+      flash.position.copy(p);
+      this._liveExplosionLights++;
+      this.pulses.push({m:flash, life:0.38, max:0.38, explosion:true});
+    }
+    const sphere = this._takePulseMesh('boom', color, 0.7);
+    sphere.position.copy(p);
     this.pulses.push({m:sphere, life:0.38, max:0.38, grow:26});
   }
   spawnProjectile(weapon, pos, vel, owner){
     const rocket=weapon==='rocket';
     const color=WEAPONS[weapon].color;
-    const m = new THREE.Mesh(new THREE.SphereGeometry(rocket?0.16:0.22,12,12),
-      new THREE.MeshBasicMaterial({color}));
+    const q=gfx();
+    const m=this._takeProjectile();
+    m.material.color.set(color);
     if(rocket){
-      m.scale.z=2.5;
-      m.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,-1),vel.clone().normalize());
+      m.scale.set(ROCKET_FIT, ROCKET_FIT, ROCKET_FIT*2.5);
+      this._aim.copy(vel).normalize();
+      m.quaternion.setFromUnitVectors(this._nose, this._aim);
+    } else {
+      m.scale.set(1,1,1);
+      m.quaternion.identity();
     }
-    const glow = new THREE.PointLight(color, rocket?23:14, rocket?12:9);
-    m.add(glow); m.position.copy(pos);
+    const glow=m.userData.light;
+    if(q.fxProjectileLight){
+      glow.color.set(color);
+      glow.intensity=rocket?23:14;
+      glow.distance=rocket?12:9;
+      glow.visible=true;
+    } else {
+      glow.intensity=0;
+      glow.visible=false;
+    }
+    m.position.copy(pos);
     this.scene.add(m);
     this.projectiles.push({mesh:m, vel:vel.clone(), life:WEAPONS[weapon].fuse, bounces:0, owner, weapon});
+  }
+  _takeProjectile(){
+    let m=this._projPool.pop();
+    if(!m){
+      m=new THREE.Mesh(this._projGeo, new THREE.MeshBasicMaterial());
+      const light=new THREE.PointLight(0xffffff,0,1);
+      light.visible=false;
+      m.add(light);
+      m.userData.light=light;
+    }
+    m.userData.inPool=false;
+    m.visible=true;
+    return m;
+  }
+  releaseProjectile(mesh){
+    if(!mesh || mesh.userData.inPool) return;
+    mesh.userData.inPool=true;
+    const light=mesh.userData.light;
+    if(light){ light.visible=false; light.intensity=0; }
+    mesh.visible=false;
+    this.scene.remove(mesh);
+    this._projPool.push(mesh);
   }
   spawnPlasma(pos, vel, owner){ this.spawnProjectile('plasma',pos,vel,owner); }
   update(dt){
     for(let i=this.tracers.length-1;i>=0;i--){
       const t=this.tracers[i]; t.life-=dt;
       t.m.material.opacity = Math.max(0, t.life/t.max);
-      if(t.life<=0){ this.scene.remove(t.m); t.m.geometry.dispose(); t.m.material.dispose(); this.tracers.splice(i,1); }
+      if(t.life<=0){ this._giveTracer(t); this.tracers.splice(i,1); }
     }
     for(let i=this.parts.length-1;i>=0;i--){
       const p=this.parts[i]; p.life-=dt;
@@ -279,15 +411,27 @@ export class FX {
       p.m.position.addScaledVector(p.v, dt);
       p.m.material.opacity = Math.max(0,p.life/p.max);
       p.m.rotation.x+=dt*8; p.m.rotation.y+=dt*6;
-      if(p.life<=0){ this.scene.remove(p.m); p.m.geometry.dispose(); p.m.material.dispose(); this.parts.splice(i,1); }
+      if(p.life<=0){
+        this.scene.remove(p.m);
+        p.m.visible=false;
+        this._partPool.push(p.m);
+        this.parts.splice(i,1);
+      }
     }
     for(let i=this.pulses.length-1;i>=0;i--){
       const p=this.pulses[i]; p.life-=dt;
       if(p.m.isLight) p.m.intensity *= Math.max(0,p.life/p.max);
       else { p.m.material.opacity = Math.max(0,p.life/p.max); if(p.grow) p.m.scale.addScalar(dt*p.grow); }
       if(p.life<=0){
-        this.scene.remove(p.m);
-        if(p.m.isMesh){ p.m.geometry.dispose(); p.m.material.dispose(); }
+        if(p.m.isLight){
+          if(p.explosion) this._liveExplosionLights=Math.max(0, this._liveExplosionLights-1);
+          this._giveLight(p.m);
+        } else if(p.m.userData.pool){
+          this.scene.remove(p.m);
+          p.m.visible=false;
+          p.m.scale.set(1,1,1);
+          p.m.userData.pool.push(p.m);
+        }
         this.pulses.splice(i,1);
       }
     }

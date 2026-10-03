@@ -19,7 +19,9 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--amber);outline-
 #room-label{width:max-content;color:var(--amber);font-weight:600;font-size:13px;gap:15px;border-left:3px solid var(--amber)}
 #room-label span{color:var(--ice);font-size:10px;font-weight:400}
 #session-clock{color:var(--ice);font-size:13px;font-weight:600;min-width:135px;justify-content:center;border-top:2px solid var(--teal)}
-#net-status{justify-self:end;gap:8px;max-width:420px;white-space:nowrap;overflow:hidden}
+#net-status{justify-self:end;gap:8px;max-width:520px;white-space:nowrap;overflow:hidden}
+#quality-btn{pointer-events:auto;flex:0 0 auto;height:22px;padding:0 8px;border:1px solid var(--line);background:transparent;color:var(--ice);font:600 10px 'IBM Plex Mono',monospace;letter-spacing:.08em}
+#quality-btn:hover{border-color:var(--teal);color:var(--teal)}
 #net-text{color:var(--ice)}
 #fps-text{color:var(--muted);font-size:9px;overflow:hidden;text-overflow:ellipsis}
 #net-dot,#menu-dot{width:7px;height:7px;flex:0 0 7px;background:var(--amber);border-radius:50%;box-shadow:0 0 8px currentColor}
@@ -129,6 +131,11 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--amber);outline-
 .menu-panel{padding:48px 45px 35px;display:flex;flex-direction:column;justify-content:center;background:linear-gradient(140deg,rgba(17,42,50,.88),rgba(11,31,40,.92))}
 .panel-kicker{margin-bottom:38px;color:var(--teal)}
 .name-row{margin-bottom:19px}.name-row label{display:block;margin-bottom:9px;color:var(--muted);font:600 10px 'IBM Plex Mono',monospace;letter-spacing:.14em}
+.quality-row{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 16px}
+.quality-row label{color:var(--muted);font:600 10px 'IBM Plex Mono',monospace;letter-spacing:.14em}
+.quality-picks{display:flex;gap:6px}
+.qpick{min-height:36px;padding:0 14px;border:1px solid var(--line);background:#102932;color:var(--muted);font:700 14px 'Barlow Condensed',sans-serif;letter-spacing:.08em}
+.qpick[aria-pressed="true"]{background:rgba(89,208,198,.18);border-color:var(--teal);color:var(--teal)}
 .name-input-wrap{display:flex;gap:8px}
 #player-name{min-width:0;flex:1;height:52px;padding:0 15px;border:1px solid var(--line);background:#102932;color:#fff;font:600 20px 'Barlow Condensed',sans-serif;letter-spacing:.08em;text-transform:uppercase}
 #player-name:focus{border-color:var(--teal)}

@@ -307,9 +307,9 @@ export function createPlayer(colorHex, name, makeNameSprite, makeWeaponWorld){
   flameL.visible=flameR.visible=false;
   tube(g,brass,0.09,0.105,0.15,-0.13,0.91,-0.33,0);
   tube(g,brass,0.09,0.105,0.15,0.13,0.91,-0.33,0);
-  const jetGlow=new THREE.PointLight(tint,0,5); jetGlow.position.set(0,0.8,-0.38); g.add(jetGlow);
+  const jetGlow=new THREE.PointLight(tint,0,5); jetGlow.position.set(0,0.8,-0.38); jetGlow.visible=false; g.add(jetGlow);
   const gun=makeWeaponWorld('pulse'); gun.scale.setScalar(0.75); gun.position.set(0.27,1.13,0.48); gun.rotation.y=Math.PI; g.add(gun);
-  const flash=new THREE.PointLight(0xffffff,0,7); flash.position.set(0.27,1.16,1.14); g.add(flash);
+  const flash=new THREE.PointLight(0xffffff,0,7); flash.position.set(0.27,1.16,1.14); flash.visible=false; g.add(flash);
   const tag=makeNameSprite(name,colorHex); g.add(tag);
   g.userData={torso,head,visor,armL,armR,legL,legR,flameL,flameR,jetGlow,gun,flash,tag,tagName:name,accent,walkPhase:Math.random()*10,animT:0,stride:0,airBlend:0,dead:false,deadT:0};
   return g;
