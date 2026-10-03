@@ -1,9 +1,17 @@
 import { createClient } from '@supabase/supabase-js';
 import { SUPABASE_URL, SUPABASE_ANON, ROOM_ID } from './config.js';
 
+// One client for the whole page. Creating a client per feature triggers the
+// "Multiple GoTrueClient instances" warning and opens duplicate sockets. The
+// game only uses guest ids, so auth persistence and token refresh are off.
+export const sb = createClient(SUPABASE_URL, SUPABASE_ANON, {
+  auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+  realtime: { params: { eventsPerSecond: 20 } },
+});
+
 export class Net {
   constructor(){
-    this.sb = createClient(SUPABASE_URL, SUPABASE_ANON, { realtime: { params: { eventsPerSecond: 20 } } });
+    this.sb = sb;
     this.channel = null;
     this.killsChannel = null;
     this.connected = false;

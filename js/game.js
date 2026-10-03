@@ -1,12 +1,11 @@
 import * as THREE from 'three';
-import { SUPABASE_URL, SUPABASE_ANON, ROOM_ID, WEAPONS, WEAPON_ORDER, MOVE, randomName, randomColor, guestId } from './config.js';
+import { WEAPONS, WEAPON_ORDER, MOVE, randomName, randomColor, guestId } from './config.js';
 import { buildArena, ARENA, tickArena, pickSpawn, getArenaSun, applyArenaQuality } from './arena.js';
 import { makeWeaponView, makeWeaponWorld, makePlayerMesh, setPlayerName, setPlayerWeapon, posePlayer, animateWeaponReload, FX } from './visuals.js';
 import { LocalPlayer } from './player.js';
 import { makeBots } from './bots.js';
 import { SFX, initAudio, resumeAudio, toggleMute } from './audio.js';
-import { Net } from './net.js';
-import { createClient } from '@supabase/supabase-js';
+import { Net, sb } from './net.js';
 import { loadQuality, setQualityMode, getQualityMode, getQualityLevel, gfx, onQualityChange, noteFps } from './quality.js';
 
 // ---------- DOM ----------
@@ -129,9 +128,9 @@ function setMenuNet(ok, txt){ const d=$('menu-dot'); d.className=''; if(ok) d.cl
 (async()=>{
   initAudio();
   try{
-    const sb = createClient(SUPABASE_URL, SUPABASE_ANON);
     const { error } = await sb.from('arena_rooms').select('*').limit(1);
     if(!error) setMenuNet(true, 'Supabase connected · PUBLIC ARENA 01 live · forever room');
+    else if(/fetch|network|resolve|offline/i.test(error.message||'')) setMenuNet(false, 'Multiplayer offline — SOLO vs bots still works');
     else setMenuNet(false, 'Supabase reachable (limited) — game still playable');
   }catch(e){ setMenuNet(false, 'Offline mode — solo vs bots still works'); }
 })();

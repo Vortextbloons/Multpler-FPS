@@ -40,7 +40,7 @@ const createClient = () => ({
 });
 const source = fs.readFileSync(path.join(__dirname, '..', 'js', 'net.js'), 'utf8')
   .replace(/^import .*;\r?\n/gm, '')
-  .replace('export class Net', 'class Net');
+  .replace(/^export\s+/gm, '');
 const context = { createClient, SUPABASE_URL:'', SUPABASE_ANON:'', ROOM_ID:'public-1',
   performance, Date, console, setTimeout, clearTimeout, setInterval:()=>0, clearInterval:()=>{} };
 vm.runInNewContext(`${source}\nglobalThis.Net=Net;`, context);
